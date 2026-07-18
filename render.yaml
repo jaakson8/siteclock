@@ -58,4 +58,4 @@ services:
           name: siteclock-api
           property: hostport
       - key: NGINX_ENVSUBST_FILTER
-        value: ^API_HOSTPORT$
+        value: ^(API_HOSTPORT|PORT)$
