@@ -1,0 +1,40 @@
+.worker-form {
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+.worker-form label {
+  display: grid;
+  gap: 7px;
+  font-weight: 650;
+  font-size: 14px;
+}
+.worker-form input,
+.worker-form select {
+  border: 1px solid #cdd8d4;
+  border-radius: 9px;
+  padding: 10px;
+  background: white;
+  color: #172126;
+  min-width: 0;
+}
+.worker-form button {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: #173f35;
+  color: white;
+  font-weight: 700;
+}
+@media (max-width: 1000px) {
+  .worker-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .worker-form {
+    grid-template-columns: 1fr;
+  }
+}

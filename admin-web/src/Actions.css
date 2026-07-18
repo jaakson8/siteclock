@@ -1,0 +1,45 @@
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.table-action.danger {
+  color: #a63522 !important;
+  border-color: #e4b7a9 !important;
+}
+.pill.credited {
+  background: #eee8f5;
+  color: #67458a;
+}
+.dev-code {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #eef3f1;
+  color: #173f35;
+}
+.login-card .back-button {
+  background: white;
+  color: #173f35;
+  border: 1px solid #cdd8d4;
+  margin-top: 10px;
+}
+.audit-search {
+  width: min(380px, 100%);
+  border: 1px solid #ccd8d3;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.audit-details {
+  display: block;
+  max-width: 360px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #52625c;
+  font-size: 12px;
+}
+.audit-alert {
+  display: block !important;
+  width: max-content;
+  margin-top: 6px;
+}

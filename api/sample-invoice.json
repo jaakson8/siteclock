@@ -1,0 +1,11 @@
+{
+  "number": "2026-00001",
+  "issuedDate": "01.07.2026",
+  "dueDate": "15.07.2026",
+  "period": "juuli 2026",
+  "subtotalCents": 9900,
+  "vatCents": 2376,
+  "totalCents": 12276,
+  "seller": { "name": "Objektiaeg OÜ", "registryCode": "14990001", "email": "arved@objektiaeg.ee", "iban": "EE001010010000000001" },
+  "client": { "name": "Demo Ehitus OÜ", "registryCode": "12345678", "email": "arved@example.com" }
+}

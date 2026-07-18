@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: siteclock-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    rootDir: api
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /ready
+    autoDeployTrigger: commit
+    disk:
+      name: siteclock-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: pilot
+      - key: DATABASE_PATH
+        value: /app/data/objektiaeg.sqlite
+      - key: CORS_ORIGIN
+        value: https://siteclock-web.onrender.com
+      - key: MAX_REQUEST_BYTES
+        value: "1048576"
+      - key: MAX_OFFLINE_SCAN_HOURS
+        value: "24"
+      - key: LOG_REQUESTS
+        value: "true"
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MANAGER_PASSWORD
+        sync: false
+      - key: SELLER_NAME
+        sync: false
+      - key: SELLER_REGISTRY_CODE
+        sync: false
+      - key: SELLER_IBAN
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+
+  - type: web
+    name: siteclock-web
+    runtime: docker
+    plan: free
+    region: frankfurt
+    rootDir: admin-web
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: API_HOSTPORT
+        fromService:
+          type: web
+          name: siteclock-api
+          property: hostport
+      - key: NGINX_ENVSUBST_FILTER
+        value: ^API_HOSTPORT$

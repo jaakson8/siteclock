@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+backups/
+**/data/*.sqlite*
+**/node_modules/
+**/dist/
+
+# Renderi serverihoidla sisaldab ainult API-t ja veebirakendust.
+# Mobiiliäpp on eraldi Expo/EAS projekt ning esitlusfailid pole serveri buildi osa.
+mobile-app/
+pilot-bundle-check/
+presentations/

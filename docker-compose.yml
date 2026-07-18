@@ -1,0 +1,39 @@
+services:
+  api:
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - objektiaeg_data:/app/data
+    expose:
+      - "3000"
+
+  web:
+    build:
+      context: ./admin-web
+      args:
+        VITE_API_URL: /api
+    restart: unless-stopped
+    environment:
+      API_HOSTPORT: api:3000
+      NGINX_ENVSUBST_FILTER: ^API_HOSTPORT$
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+  backup:
+    build: ./api
+    profiles: ["tools"]
+    user: "0:0"
+    environment:
+      DATABASE_PATH: /app/data/objektiaeg.sqlite
+      BACKUP_DIR: /backups
+    volumes:
+      - objektiaeg_data:/app/data:ro
+      - ./backups:/backups
+    command: ["node", "backup.mjs"]
+
+volumes:
+  objektiaeg_data:
