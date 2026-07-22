@@ -2346,12 +2346,17 @@ export function validateProductionConfig(environment = process.env) {
     errors.push("MAX_OFFLINE_SCAN_HOURS peab olema vahemikus 1 kuni 72");
   if ([environment.SELLER_NAME, environment.SELLER_REGISTRY_CODE, environment.SELLER_IBAN].some(isPlaceholder))
     errors.push("Müüja arveldusandmed on puudulikud");
-  if (!environment.SMTP_HOST || !environment.SMTP_USER || !environment.SMTP_PASS)
-    errors.push("SMTP seadistus on tootmises kaheastmelise sisselogimise jaoks kohustuslik");
-  if (!String(environment.SMS_WEBHOOK_URL ?? "").startsWith("https://") || isPlaceholder(environment.SMS_WEBHOOK_URL))
-    errors.push("SMS_WEBHOOK_URL peab olema PIN-i taastamise HTTPS-aadress");
-  if (String(environment.SMS_WEBHOOK_TOKEN ?? "").length < 16 || isPlaceholder(environment.SMS_WEBHOOK_TOKEN))
-    errors.push("SMS_WEBHOOK_TOKEN peab olema vähemalt 16 märki");
+  const smtpValues = [environment.SMTP_HOST, environment.SMTP_USER, environment.SMTP_PASS];
+  if (smtpValues.some(Boolean) && !smtpValues.every(Boolean))
+    errors.push("SMTP seadistus peab sisaldama hosti, kasutajat ja parooli");
+  const smsUrl = String(environment.SMS_WEBHOOK_URL ?? "");
+  const smsToken = String(environment.SMS_WEBHOOK_TOKEN ?? "");
+  if (smsUrl || smsToken) {
+    if (!smsUrl.startsWith("https://") || isPlaceholder(smsUrl))
+      errors.push("SMS_WEBHOOK_URL peab olema PIN-i taastamise HTTPS-aadress");
+    if (smsToken.length < 16 || isPlaceholder(smsToken))
+      errors.push("SMS_WEBHOOK_TOKEN peab olema vähemalt 16 märki");
+  }
   if (errors.length) throw new Error(`Tootmiskeskkonna seadistus vigane:\n- ${errors.join("\n- ")}`);
   return true;
 }
