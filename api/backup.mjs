@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -16,28 +16,33 @@ export function createDatabaseBackup({
   if (dirname(destination) !== resolve(backupDirectory))
     throw new Error("Varukoopia sihtkoht ei ole lubatud");
 
-  const source = new DatabaseSync(databasePath);
   try {
-    source.prepare("VACUUM INTO ?").run(destination);
-  } finally {
-    source.close();
-  }
+    const source = new DatabaseSync(databasePath);
+    try {
+      source.prepare("VACUUM INTO ?").run(destination);
+    } finally {
+      source.close();
+    }
 
-  const backup = new DatabaseSync(destination, { readOnly: true });
-  let integrity;
-  try {
-    integrity = backup.prepare("PRAGMA integrity_check").get().integrity_check;
-  } finally {
-    backup.close();
+    const backup = new DatabaseSync(destination, { readOnly: true });
+    let integrity;
+    try {
+      integrity = backup.prepare("PRAGMA integrity_check").get().integrity_check;
+    } finally {
+      backup.close();
+    }
+    if (integrity !== "ok") throw new Error(`Varukoopia terviklikkuse kontroll ebaõnnestus: ${integrity}`);
+    return {
+      path: destination,
+      fileName: basename(destination),
+      bytes: statSync(destination).size,
+      integrity,
+      createdAt: now.toISOString(),
+    };
+  } catch (error) {
+    if (existsSync(destination)) unlinkSync(destination);
+    throw error;
   }
-  if (integrity !== "ok") throw new Error(`Varukoopia terviklikkuse kontroll ebaõnnestus: ${integrity}`);
-  return {
-    path: destination,
-    fileName: basename(destination),
-    bytes: statSync(destination).size,
-    integrity,
-    createdAt: now.toISOString(),
-  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

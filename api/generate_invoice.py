@@ -22,7 +22,12 @@ def make_pdf(invoice, output):
         "et": ["Töömaa kohaloleku ja tööaja haldus", "ARVE", "ARVE ESITAJA", "ARVE SAAJA", "Registrikood", "Arve kuupäev", "Maksetähtaeg", "Viitenumber", "Kirjeldus", "Kogus", "Hind", "Summa", "SiteClocki teenus", "Vahesumma", "Käibemaks", "TASUDA KOKKU", "Makseinfo", "Selgitus: arve", "Täname õigeaegse tasumise eest.", "arve"],
         "fi": ["Työmaan läsnäolon ja työajan hallinta", "LASKU", "LASKUTTAJA", "LASKUN SAAJA", "Y-tunnus", "Laskun päiväys", "Eräpäivä", "Viitenumero", "Kuvaus", "Määrä", "Hinta", "Summa", "SiteClock-palvelu", "Välisumma", "Arvonlisävero", "MAKSETTAVA YHTEENSÄ", "Maksutiedot", "Viesti: lasku", "Kiitos oikea-aikaisesta maksusta.", "lasku"],
         "en": ["Site attendance and work-time management", "INVOICE", "SELLER", "CUSTOMER", "Registry code", "Invoice date", "Due date", "Reference", "Description", "Quantity", "Price", "Amount", "SiteClock service", "Subtotal", "VAT", "TOTAL DUE", "Payment details", "Message: invoice", "Thank you for your prompt payment.", "invoice"],
-    }.get(language)
+    }.get(language, None)
+    if labels is None:
+        language = "et"
+        labels = {
+            "et": ["Töömaa kohaloleku ja tööaja haldus", "ARVE", "ARVE ESITAJA", "ARVE SAAJA", "Registrikood", "Arve kuupäev", "Maksetähtaeg", "Viitenumber", "Kirjeldus", "Kogus", "Hind", "Summa", "SiteClocki teenus", "Vahesumma", "Käibemaks", "TASUDA KOKKU", "Makseinfo", "Selgitus: arve", "Täname õigeaegse tasumise eest.", "arve"]
+        }["et"]
     canvas = Canvas(output, pagesize=A4)
     width, height = A4
     canvas.setFillColor(colors.white)

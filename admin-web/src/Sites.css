@@ -28,6 +28,19 @@
   color: white;
   font-weight: 700;
 }
+.site-form .secondary-action {
+  border: 1px solid #b8c7c1;
+  background: #f4f7f6;
+  color: #173f35;
+}
+.site-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.site-form-actions {
+  display: grid;
+  gap: 8px;
+}
 .site-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

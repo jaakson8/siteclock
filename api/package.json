@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "DATABASE_PATH=:memory: SCAN_TIME_VALIDATION=false node --test *.test.mjs",
+    "test": "NODE_ENV=test DATABASE_PATH=:memory: SCAN_TIME_VALIDATION=false node --test *.test.mjs",
     "backup": "node backup.mjs"
   },
   "dependencies": {

@@ -3,6 +3,9 @@ import {
   randomBytes,
   randomInt,
   randomUUID,
+  createCipheriv,
+  createDecipheriv,
+  createHash,
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
@@ -16,13 +19,32 @@ import { startScheduler } from "./scheduler.mjs";
 import QRCode from "qrcode";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const isDevelopmentEnvironment = ["development", "test"].includes(process.env.NODE_ENV);
+const developmentPassword = isDevelopmentEnvironment ? "demo1234" : randomBytes(32).toString("base64url");
+const transientCodeKey = createHash("sha256")
+  .update(process.env.CODE_ENCRYPTION_KEY ?? process.env.SMS_WEBHOOK_TOKEN ?? developmentPassword)
+  .digest();
+
+function protectTransientCode(code) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", transientCodeKey, iv);
+  const encrypted = Buffer.concat([cipher.update(String(code), "utf8"), cipher.final()]);
+  return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function revealTransientCode(value) {
+  const [iv, tag, encrypted] = String(value).split(".").map((part) => Buffer.from(part, "base64url"));
+  const decipher = createDecipheriv("aes-256-gcm", transientCodeKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
 
 const admin = {
   id: "admin-1",
   name: "Peakasutaja",
-  email: process.env.ADMIN_EMAIL ?? "owner@example.com",
+  email: process.env.ADMIN_EMAIL ?? (isDevelopmentEnvironment ? "owner@example.com" : ""),
   role: "admin",
-  passwordHash: hashSecret(process.env.ADMIN_PASSWORD ?? "demo1234"),
+  passwordHash: hashSecret(process.env.ADMIN_PASSWORD ?? developmentPassword),
 };
 const stateStore = createStateStore(
   process.env.DATABASE_PATH ??
@@ -69,7 +91,7 @@ const persistentState = stateStore.load({
       role: "manager",
       clientId: "client-1",
       active: true,
-      passwordHash: hashSecret(process.env.MANAGER_PASSWORD ?? "demo1234"),
+      passwordHash: hashSecret(process.env.MANAGER_PASSWORD ?? developmentPassword),
       mustChangePassword: false,
     },
   ],
@@ -81,6 +103,7 @@ const persistentState = stateStore.load({
   sites: [],
   entrances: [],
   notifications: [],
+  invoiceSequence: 0,
 });
 const {
   workers,
@@ -101,6 +124,7 @@ export const processPendingEmails = createEmailProcessor({
   clients,
   moduleDirectory,
   save: () => stateStore.save(persistentState),
+  revealCode: revealTransientCode,
 });
 
 const qrCodes = new Map([
@@ -210,6 +234,11 @@ function normalizePhone(value = "") {
   return String(value).replace(/[\s()-]/g, "");
 }
 
+function isValidSingleEmail(value) {
+  const email = String(value ?? "").trim();
+  return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email);
+}
+
 function distanceMeters(lat1, lon1, lat2, lon2) {
   const radius = 6371000;
   const toRadians = (value) => (value * Math.PI) / 180;
@@ -229,7 +258,7 @@ function json(response, status, body) {
     "Content-Type": "application/json; charset=utf-8",
     ...apiSecurityHeaders(response),
     "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-Id",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Expose-Headers": "X-Request-Id, Content-Disposition",
   });
   response.end(JSON.stringify(body));
@@ -248,6 +277,13 @@ function apiSecurityHeaders(response) {
       ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" }
       : {}),
   };
+}
+
+export function calculateShiftMinutes(inTime, outTime) {
+  const [inHour, inMinute] = inTime.split(":").map(Number);
+  const [outHour, outMinute] = outTime.split(":").map(Number);
+  const rawMinutes = outHour * 60 + outMinute - inHour * 60 - inMinute;
+  return rawMinutes < 0 ? rawMinutes + 24 * 60 : rawMinutes;
 }
 
 function buildTimesheet(userId, from, to, siteId = "") {
@@ -297,9 +333,7 @@ function buildTimesheet(userId, from, to, siteId = "") {
   }
   for (const day of grouped.values()) {
     if (day.inTime && day.outTime) {
-      const [inHour, inMinute] = day.inTime.split(":").map(Number);
-      const [outHour, outMinute] = day.outTime.split(":").map(Number);
-      day.totalMinutes = outHour * 60 + outMinute - inHour * 60 - inMinute;
+      day.totalMinutes = calculateShiftMinutes(day.inTime, day.outTime);
     }
   }
   return [...grouped.values()].sort((a, b) => b.date.localeCompare(a.date));
@@ -448,7 +482,34 @@ function invoicePdf(response, invoice, client) {
   );
 }
 
-async function qrSheetPdf(response, site, entrance) {
+async function qrSheetPdf(response, site, entrance, language = "et") {
+  const translations = {
+    et: {
+      entrance: "Sissepääs",
+      scanIn: "SKANEERI SISENEMISEL",
+      scanOut: "SKANEERI LAHKUMISEL",
+      instruction: "Ava SiteClocki äpp ja skaneeri õige kood",
+      locationNotice: "Asukohta kontrollitakse ainult registreerimise hetkel.",
+      footer: "SiteClock - töömaa kohaloleku registreerimine",
+    },
+    fi: {
+      entrance: "Sisäänkäynti",
+      scanIn: "SKANNAA SAAPUESSA",
+      scanOut: "SKANNAA LÄHTIESSÄ",
+      instruction: "Avaa SiteClock-sovellus ja skannaa oikea koodi",
+      locationNotice: "Sijainti tarkistetaan vain kirjautumishetkellä.",
+      footer: "SiteClock - työmaan läsnäolon kirjaaminen",
+    },
+    en: {
+      entrance: "Entrance",
+      scanIn: "SCAN WHEN ENTERING",
+      scanOut: "SCAN WHEN LEAVING",
+      instruction: "Open the SiteClock app and scan the correct code",
+      locationNotice: "Location is checked only at the time of registration.",
+      footer: "SiteClock - construction site attendance registration",
+    },
+  };
+  const selectedLanguage = Object.hasOwn(translations, language) ? language : "et";
   const [inPng, outPng] = await Promise.all([
     QRCode.toBuffer(`objektiaeg://scan?t=${entrance.inToken}`, {
       width: 900,
@@ -491,7 +552,10 @@ async function qrSheetPdf(response, site, entrance) {
       gateName: entrance.name,
       inQrBase64: inPng.toString("base64"),
       outQrBase64: outPng.toString("base64"),
-      generatedAt: new Date().toLocaleDateString("et-EE"),
+      generatedAt: new Date().toLocaleDateString(
+        { et: "et-EE", fi: "fi-FI", en: "en-GB" }[selectedLanguage],
+      ),
+      labels: translations[selectedLanguage],
     }),
   );
 }
@@ -605,6 +669,10 @@ function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function localIsoDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function addDays(date, days) {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + days);
@@ -613,6 +681,19 @@ function addDays(date, days) {
 
 function invoiceNumber(date, sequence) {
   return `${date.getUTCFullYear()}-${String(sequence).padStart(5, "0")}`;
+}
+
+function nextInvoiceSequence() {
+  const greatestExisting = invoices.reduce((greatest, invoice) => {
+    if (invoice.documentType === "CREDIT_NOTE" || String(invoice.number).startsWith("K-")) return greatest;
+    const match = String(invoice.number ?? "").match(/-(\d+)$/);
+    return match ? Math.max(greatest, Number(match[1])) : greatest;
+  }, 0);
+  persistentState.invoiceSequence = Math.max(
+    Number(persistentState.invoiceSequence) || 0,
+    greatestExisting,
+  ) + 1;
+  return persistentState.invoiceSequence;
 }
 
 function audit(user, action, entityType, entityId, details = {}) {
@@ -708,14 +789,18 @@ function resolveQrCode(payload) {
 }
 
 function queueEmail(message) {
+  const protectedMessage = message.code === undefined
+    ? message
+    : { ...message, protectedCode: protectTransientCode(message.code), code: undefined };
   const queued = {
     id: randomUUID(),
     status: "PENDING",
     attempts: 0,
     nextAttemptAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
-    ...message,
+    ...protectedMessage,
   };
+  delete queued.code;
   emailOutbox.push(queued);
   return queued;
 }
@@ -737,7 +822,7 @@ function generateInvoices(runDate, user = admin) {
     const vatCents = Math.round(subtotalCents * client.vatRate);
     const invoice = {
       id: randomUUID(),
-      number: invoiceNumber(runDate, invoices.length + 1),
+      number: invoiceNumber(runDate, nextInvoiceSequence()),
       clientId: client.id,
       clientName: client.companyName,
       billingEmail: client.billingEmail,
@@ -835,7 +920,7 @@ function runReminderAutomation(runDate, user = admin) {
 }
 
 export function runDailyAutomation(date = new Date()) {
-  const runDate = new Date(`${isoDate(date)}T00:00:00.000Z`);
+  const runDate = new Date(`${localIsoDate(date)}T00:00:00.000Z`);
   const generated = generateInvoices(runDate, admin);
   const reminders = runReminderAutomation(runDate, admin);
   const attendanceReminders = createMissingOutReminders(isoDate(addDays(runDate, -1)));
@@ -965,6 +1050,7 @@ export function createApiServer() {
           codeHash: hashSecret(code),
           expiresAt: Date.now() + 10 * 60 * 1000,
           attemptsLeft: 5,
+          rateLimitKey: authFailureKey("staff-code", loginUser.email),
         });
         queueEmail({
           type: "ADMIN_LOGIN_CODE",
@@ -975,9 +1061,7 @@ export function createApiServer() {
         return json(response, 200, {
           challengeId,
           requiresTwoFactor: true,
-          ...(process.env.NODE_ENV === "production"
-            ? {}
-            : { developmentCode: code }),
+          ...(isDevelopmentEnvironment ? { developmentCode: code } : {}),
         });
       }
 
@@ -992,7 +1076,9 @@ export function createApiServer() {
             status: 401,
             code: "CHALLENGE_EXPIRED",
           });
+        assertAuthNotLimited(challenge.rateLimitKey);
         if (!verifySecret(body.code, challenge.codeHash)) {
+          recordAuthFailure(challenge.rateLimitKey, maskedIdentifier(challenge.user.email), "STAFF_CODE");
           challenge.attemptsLeft -= 1;
           if (challenge.attemptsLeft <= 0)
             authChallenges.delete(body.challengeId);
@@ -1001,6 +1087,7 @@ export function createApiServer() {
             code: "INVALID_CODE",
           });
         }
+        clearAuthFailures(challenge.rateLimitKey);
         authChallenges.delete(body.challengeId);
         const accessToken = createSession(challenge.user);
         audit(challenge.user, challenge.user.role === "admin" ? "ADMIN_LOGIN_SUCCEEDED" : "MANAGER_LOGIN_SUCCEEDED", "SESSION", accessToken.slice(0, 12));
@@ -1110,7 +1197,7 @@ export function createApiServer() {
       if (request.method === "POST" && url.pathname === "/v1/admin/clients") {
         const user = requireAdmin(request);
         const body = await readBody(request);
-        if (!body.companyName || !body.registryCode || !body.billingEmail)
+        if (!body.companyName || !body.registryCode || !isValidSingleEmail(body.billingEmail))
           throw Object.assign(
             new Error(
               "Ettevõtte nimi, registrikood ja arve e-post on kohustuslikud",
@@ -1159,6 +1246,10 @@ export function createApiServer() {
         const body = await readBody(request);
         if (body.vatRate !== undefined && (!Number.isFinite(Number(body.vatRate)) || Number(body.vatRate) < 0 || Number(body.vatRate) > 1))
           throw Object.assign(new Error("Käibemaksumäär peab olema vahemikus 0–100%"), { status: 400, code: "INVALID_CLIENT" });
+        if (body.billingEmail !== undefined && !isValidSingleEmail(body.billingEmail))
+          throw Object.assign(new Error("Sisesta üks korrektne arve e-posti aadress"), { status: 400, code: "INVALID_CLIENT" });
+        if (body.language !== undefined && !["et", "fi", "en"].includes(body.language))
+          throw Object.assign(new Error("Toetatud keeled on et, fi ja en"), { status: 400, code: "INVALID_CLIENT" });
         const allowed = [
           "companyName",
           "registryCode",
@@ -1189,7 +1280,7 @@ export function createApiServer() {
         return json(
           response,
           200,
-          sites.map((site) => ({
+          sites.filter((site) => !site.archivedAt).map((site) => ({
             ...site,
             entrances: entrances
               .filter((item) => item.siteId === site.id)
@@ -1201,10 +1292,18 @@ export function createApiServer() {
       if (request.method === "POST" && url.pathname === "/v1/admin/sites") {
         const user = requireOperationsUser(request);
         const body = await readBody(request);
+        const radiusMeters = Number(body.radiusMeters ?? 200);
         if (
           !body.name ||
           !Number.isFinite(body.latitude) ||
-          !Number.isFinite(body.longitude)
+          body.latitude < -90 ||
+          body.latitude > 90 ||
+          !Number.isFinite(body.longitude) ||
+          body.longitude < -180 ||
+          body.longitude > 180 ||
+          !Number.isFinite(radiusMeters) ||
+          radiusMeters < 20 ||
+          radiusMeters > 2000
         )
           throw Object.assign(
             new Error("Töömaa nimi ja koordinaadid on kohustuslikud"),
@@ -1217,13 +1316,125 @@ export function createApiServer() {
           address: body.address ?? "",
           latitude: body.latitude,
           longitude: body.longitude,
-          radiusMeters: Number(body.radiusMeters ?? 200),
+          radiusMeters,
           active: true,
           createdAt: new Date().toISOString(),
         };
         sites.push(site);
         audit(user, "SITE_CREATED", "SITE", site.id, { name: site.name });
         return json(response, 201, site);
+      }
+
+      const siteUpdateMatch = url.pathname.match(
+        /^\/v1\/admin\/sites\/([^/]+)$/,
+      );
+      if (request.method === "PUT" && siteUpdateMatch) {
+        const user = requireOperationsUser(request);
+        const site = sites.find((item) => item.id === siteUpdateMatch[1]);
+        if (!site)
+          throw Object.assign(new Error("Töömaad ei leitud"), {
+            status: 404,
+            code: "SITE_NOT_FOUND",
+          });
+        requireClientScope(user, site.clientId);
+        const body = await readBody(request);
+        const latitude = Number(body.latitude);
+        const longitude = Number(body.longitude);
+        const radiusMeters = Number(body.radiusMeters);
+        if (
+          !String(body.name ?? "").trim() ||
+          !Number.isFinite(latitude) ||
+          latitude < -90 ||
+          latitude > 90 ||
+          !Number.isFinite(longitude) ||
+          longitude < -180 ||
+          longitude > 180 ||
+          !Number.isFinite(radiusMeters) ||
+          radiusMeters < 20 ||
+          radiusMeters > 2000
+        )
+          throw Object.assign(new Error("Kontrolli töömaa nime, koordinaate ja raadiust"), {
+            status: 400,
+            code: "INVALID_SITE",
+          });
+        Object.assign(site, {
+          name: String(body.name).trim(),
+          address: String(body.address ?? "").trim(),
+          latitude,
+          longitude,
+          radiusMeters,
+        });
+        audit(user, "SITE_UPDATED", "SITE", site.id, {
+          latitude,
+          longitude,
+          radiusMeters,
+        });
+        return json(response, 200, site);
+      }
+
+      if (request.method === "DELETE" && siteUpdateMatch) {
+        const user = requireOperationsUser(request);
+        const site = sites.find((item) => item.id === siteUpdateMatch[1]);
+        if (!site || site.archivedAt)
+          throw Object.assign(new Error("Töömaad ei leitud"), {
+            status: 404,
+            code: "SITE_NOT_FOUND",
+          });
+        requireClientScope(user, site.clientId);
+        if (currentPresence(new Date()).some((item) => item.siteId === site.id))
+          throw Object.assign(new Error("Töömaad ei saa eemaldada, kuni seal on registreeritud töötajaid"), {
+            status: 409,
+            code: "SITE_HAS_PRESENT_WORKERS",
+          });
+        site.active = false;
+        site.archivedAt = new Date().toISOString();
+        for (const entrance of entrances)
+          if (entrance.siteId === site.id) entrance.active = false;
+        for (const worker of workers)
+          if (Array.isArray(worker.assignedSiteIds))
+            worker.assignedSiteIds = worker.assignedSiteIds.filter((id) => id !== site.id);
+        audit(user, "SITE_ARCHIVED", "SITE", site.id, {
+          attendanceRetained: events.filter((event) => event.siteId === site.id).length,
+        });
+        return json(response, 200, { removed: true, id: site.id });
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/admin/geocode") {
+        requireOperationsUser(request);
+        const address = String(url.searchParams.get("address") ?? "").trim();
+        if (address.length < 4)
+          throw Object.assign(new Error("Sisesta täpsem aadress"), {
+            status: 400,
+            code: "INVALID_ADDRESS",
+          });
+        const geocodeUrl = new URL("https://nominatim.openstreetmap.org/search");
+        geocodeUrl.searchParams.set("q", address);
+        geocodeUrl.searchParams.set("format", "jsonv2");
+        geocodeUrl.searchParams.set("limit", "1");
+        const geocodeResponse = await fetch(geocodeUrl, {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "SiteClock/1.0 (site location setup)",
+          },
+        });
+        if (!geocodeResponse.ok)
+          throw Object.assign(new Error("Aadressi otsing pole hetkel saadaval"), {
+            status: 502,
+            code: "GEOCODING_UNAVAILABLE",
+          });
+        const [match] = await geocodeResponse.json();
+        const latitude = Number(match?.lat);
+        const longitude = Number(match?.lon);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude))
+          throw Object.assign(new Error("Aadressi ei leitud. Täpsusta aadressi ja linna."), {
+            status: 404,
+            code: "ADDRESS_NOT_FOUND",
+          });
+        return json(response, 200, {
+          latitude,
+          longitude,
+          displayName: match.display_name ?? address,
+        });
       }
 
       const entranceCreateMatch = url.pathname.match(
@@ -1291,7 +1502,10 @@ export function createApiServer() {
             code: "ENTRANCE_NOT_FOUND",
           });
         requireClientScope(user, site.clientId);
-        return await qrSheetPdf(response, site, entrance);
+        const language = ["et", "fi", "en"].includes(url.searchParams.get("lang"))
+          ? url.searchParams.get("lang")
+          : "et";
+        return await qrSheetPdf(response, site, entrance, language);
       }
 
       const qrRotateMatch = url.pathname.match(
@@ -1318,7 +1532,7 @@ export function createApiServer() {
         return json(
           response,
           200,
-          workers.map(({ pinHash, ...worker }) => worker),
+          workers.filter((worker) => !worker.removedAt).map(({ pinHash, ...worker }) => worker),
         );
       }
 
@@ -1356,7 +1570,7 @@ export function createApiServer() {
         const assignedSiteIds = Array.isArray(body.assignedSiteIds)
           ? body.assignedSiteIds.filter((id) =>
               sites.some(
-                (site) => site.id === id && site.clientId === client.id,
+                (site) => site.id === id && site.clientId === client.id && site.active !== false && !site.archivedAt,
               ),
             )
           : [];
@@ -1411,6 +1625,32 @@ export function createApiServer() {
         });
         const { pinHash, ...publicWorker } = worker;
         return json(response, 200, publicWorker);
+      }
+
+      if (request.method === "DELETE" && workerMatch) {
+        const user = requireOperationsUser(request);
+        const worker = workers.find((item) => item.id === workerMatch[1]);
+        if (!worker || worker.removedAt)
+          throw Object.assign(new Error("Töötajat ei leitud"), {
+            status: 404,
+            code: "WORKER_NOT_FOUND",
+          });
+        requireClientScope(user, worker.clientId);
+        if (currentPresence(new Date()).some((item) => item.userId === worker.id))
+          throw Object.assign(new Error("Töötajat ei saa eemaldada enne OUT-registreeringut"), {
+            status: 409,
+            code: "WORKER_IS_ON_SITE",
+          });
+        worker.active = false;
+        worker.assignedSiteIds = [];
+        worker.pinHash = null;
+        worker.removedAt = new Date().toISOString();
+        for (const [token, session] of sessions)
+          if (session.user.id === worker.id) sessions.delete(token);
+        audit(user, "WORKER_ARCHIVED", "WORKER", worker.id, {
+          attendanceRetained: events.filter((event) => event.userId === worker.id).length,
+        });
+        return json(response, 200, { removed: true, id: worker.id });
       }
 
       const resetPinMatch = url.pathname.match(
@@ -1674,7 +1914,7 @@ export function createApiServer() {
         url.pathname === "/v1/admin/email-outbox"
       ) {
         requireAdmin(request);
-        return json(response, 200, emailOutbox);
+        return json(response, 200, emailOutbox.map(({ code, protectedCode, ...message }) => message));
       }
 
       if (
@@ -1703,9 +1943,9 @@ export function createApiServer() {
 
       if (request.method === "GET" && url.pathname === "/v1/manager/dashboard") {
         const user = requireManager(request);
-        const clientWorkers = workers.filter((worker) => worker.clientId === user.clientId);
+        const clientWorkers = workers.filter((worker) => worker.clientId === user.clientId && !worker.removedAt);
         const workerIds = new Set(clientWorkers.map((worker) => worker.id));
-        const clientSites = sites.filter((site) => site.clientId === user.clientId);
+        const clientSites = sites.filter((site) => site.clientId === user.clientId && !site.archivedAt);
         const siteIds = new Set(clientSites.map((site) => site.id));
         return json(response, 200, {
           clients: clients.filter((client) => client.id === user.clientId),
@@ -1826,7 +2066,12 @@ export function createApiServer() {
             status: 400,
             code: "INVALID_PIN",
           });
-        if (worker.pinHash && !verifySecret(body.pin, worker.pinHash)) {
+        if (!worker.pinHash)
+          throw Object.assign(new Error("PIN-i esmakordseks määramiseks kinnita telefoninumber SMS-koodiga"), {
+            status: 403,
+            code: "PIN_SETUP_REQUIRED",
+          });
+        if (!verifySecret(body.pin, worker.pinHash)) {
           recordAuthFailure(rateLimitKey, maskedIdentifier(body.phone), "WORKER_PIN");
           throw Object.assign(new Error("Vale PIN-kood"), {
             status: 401,
@@ -1834,7 +2079,6 @@ export function createApiServer() {
           });
         }
         clearAuthFailures(rateLimitKey);
-        if (!worker.pinHash) worker.pinHash = hashSecret(body.pin);
         const accessToken = createSession(worker);
         audit(worker, "WORKER_LOGIN_SUCCEEDED", "SESSION", accessToken.slice(0, 12));
         const { pinHash, ...publicWorker } = worker;
@@ -1850,6 +2094,8 @@ export function createApiServer() {
         url.pathname === "/v1/auth/recovery/request"
       ) {
         const body = await readBody(request);
+        const requestLimitKey = authFailureKey("recovery-request", normalizePhone(body.phone));
+        assertAuthNotLimited(requestLimitKey);
         const worker = workers.find(
           (item) => normalizePhone(item.phone) === normalizePhone(body.phone),
         );
@@ -1861,7 +2107,9 @@ export function createApiServer() {
             codeHash: hashSecret(code),
             expiresAt: Date.now() + 10 * 60 * 1000,
             attemptsLeft: 5,
+            rateLimitKey: authFailureKey("recovery-code", normalizePhone(worker.phone)),
           });
+          recordAuthFailure(requestLimitKey, maskedIdentifier(worker.phone), "RECOVERY_REQUEST");
           queueEmail({
             type: "ACCOUNT_RECOVERY_CODE",
             to: worker.phone,
@@ -1871,9 +2119,7 @@ export function createApiServer() {
           return json(response, 200, {
             accepted: true,
             challengeId,
-            ...(process.env.NODE_ENV === "production"
-              ? {}
-              : { developmentCode: code }),
+            ...(isDevelopmentEnvironment ? { developmentCode: code } : {}),
           });
         }
         return json(response, 200, { accepted: true });
@@ -1890,7 +2136,9 @@ export function createApiServer() {
             status: 401,
             code: "CHALLENGE_EXPIRED",
           });
+        assertAuthNotLimited(challenge.rateLimitKey);
         if (!verifySecret(body.code, challenge.codeHash)) {
+          recordAuthFailure(challenge.rateLimitKey, maskedIdentifier(challenge.user.phone), "RECOVERY_CODE");
           challenge.attemptsLeft -= 1;
           if (challenge.attemptsLeft <= 0)
             recoveryChallenges.delete(body.challengeId);
@@ -1905,6 +2153,8 @@ export function createApiServer() {
             code: "INVALID_PIN",
           });
         challenge.user.pinHash = hashSecret(body.newPin);
+        clearAuthFailures(challenge.rateLimitKey);
+        clearAuthFailures(authFailureKey("recovery-request", normalizePhone(challenge.user.phone)));
         clearAuthFailures(authFailureKey("worker", normalizePhone(challenge.user.phone)));
         recoveryChallenges.delete(body.challengeId);
         for (const [token, session] of sessions)
@@ -1923,7 +2173,9 @@ export function createApiServer() {
         if (
           ![body.latitude, body.longitude, body.accuracyMeters].every(
             Number.isFinite,
-          )
+          ) || body.latitude < -90 || body.latitude > 90 ||
+          body.longitude < -180 || body.longitude > 180 ||
+          body.accuracyMeters <= 0
         )
           throw Object.assign(new Error("Asukohaandmed puuduvad"), {
             status: 400,
@@ -2071,7 +2323,7 @@ export function createApiServer() {
 }
 
 export function validateProductionConfig(environment = process.env) {
-  if (environment.NODE_ENV !== "production") return true;
+  if (["development", "test"].includes(environment.NODE_ENV)) return true;
   const errors = [];
   const isPlaceholder = (value) =>
     !value || /^(MUUDA|CHANGE|CHANGEME)|example\.com|PILOOT-DOMEEN/i.test(String(value));
