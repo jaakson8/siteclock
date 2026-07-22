@@ -22,8 +22,31 @@ const operationalText: Record<Exclude<WebLanguage, "et">, Record<string, string>
   en: { "Lisa töötaja": "Add worker", "Töötaja seotakse veebirakenduses oleva ettevõtte ja töömaaga": "The worker is linked to a company and site in the web application", "Klient": "Client", "Vali klient": "Select client", "Nimi": "Name", "Amet": "Job title", "Kõik töömaad": "All sites", "Salvestan…": "Saving…", "kasutajat": "users", "Kõik": "All", "Aktiivne": "Active", "Peatatud": "Suspended", "Peata": "Suspend", "Aktiveeri": "Activate", "Lähtesta PIN": "Reset PIN", "Ekspordi andmed": "Export data", "Anonümiseeri": "Anonymise", "Lisa töömaa": "Add site", "Asukohta kasutatakse QR-registreeringu kontrollimiseks": "The location is used to verify QR registrations", "Töömaa nimi": "Site name", "Aadress": "Address", "Laiuskraad": "Latitude", "Pikkuskraad": "Longitude", "Lubatud raadius (m)": "Allowed radius (m)", "Loo töömaa": "Create site", "Töömaid pole veel loodud": "No sites have been created yet", "Aadress puudub": "Address missing", "raadius": "radius", "Kohalolijate PDF": "Presence PDF", "Sissepääsud": "Entrances", "Sissepääse pole lisatud.": "No entrances have been added.", "Ava QR-leht": "Open QR sheet", "Uuenda koodid": "Refresh codes", "Sissepääsu nimi": "Entrance name", "Lisa sissepääs": "Add entrance", "Ettevõte": "Company", "Olek": "Status", "Toimingud": "Actions" },
 };
 
+const siteLocationText: Record<Exclude<WebLanguage, "et">, Record<string, string>> = {
+  fi: {
+    "Muuda töömaad": "Muokkaa työmaata",
+    "Otsin asukohta…": "Haetaan sijaintia…",
+    "Leia aadressi asukoht": "Hae osoitteen sijainti",
+    "Kasuta minu praegust asukohta": "Käytä nykyistä sijaintiani",
+    "Salvesta töömaa": "Tallenna työmaa",
+    "Muuda asukohta": "Muokkaa sijaintia",
+    "Eemalda töömaa": "Poista työmaa",
+    "Eemalda töötaja": "Poista työntekijä",
+  },
+  en: {
+    "Muuda töömaad": "Edit site",
+    "Otsin asukohta…": "Finding location…",
+    "Leia aadressi asukoht": "Find address location",
+    "Kasuta minu praegust asukohta": "Use my current location",
+    "Salvesta töömaa": "Save site",
+    "Muuda asukohta": "Edit location",
+    "Eemalda töömaa": "Remove site",
+    "Eemalda töötaja": "Remove worker",
+  },
+};
+
 export function webUiText(language: WebLanguage, estonian: string) {
-  return language === "et" ? estonian : operationalText[language][estonian] ?? estonian;
+  return language === "et" ? estonian : siteLocationText[language][estonian] ?? operationalText[language][estonian] ?? estonian;
 }
 
 const accountText: Record<Exclude<WebLanguage, "et">, Record<string, string>> = {

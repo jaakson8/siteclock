@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { Component, useMemo, useState } from "react";
+import type { ErrorInfo, FormEvent, ReactNode } from "react";
 import "./App.css";
 import "./Client.css";
 import "./Actions.css";
@@ -153,6 +153,15 @@ async function api<T>(
   return body;
 }
 
+function ensureArray<T>(value: unknown, label: string): T[] {
+  if (!Array.isArray(value)) throw new Error(`${label}: server tagastas vigase andmevormingu`);
+  return value as T[];
+}
+
+function localDateValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function euro(cents: number) {
   return new Intl.NumberFormat("et-EE", {
     style: "currency",
@@ -179,10 +188,13 @@ function auditActionLabel(action: string) {
       CLIENT_CREATED: "Klient loodud",
       CLIENT_UPDATED: "Klient muudetud",
       SITE_CREATED: "Töömaa loodud",
+      SITE_UPDATED: "Töömaa muudetud",
+      SITE_ARCHIVED: "Töömaa eemaldatud",
       ENTRANCE_CREATED: "Sissepääs loodud",
       QR_TOKENS_ROTATED: "QR-koodid uuendatud",
       WORKER_CREATED: "Töötaja loodud",
       WORKER_UPDATED: "Töötaja muudetud",
+      WORKER_ARCHIVED: "Töötaja eemaldatud",
       WORKER_PIN_RESET: "Töötaja PIN lähtestatud",
       WORKER_DATA_EXPORTED: "Töötaja andmed eksporditud",
       WORKER_ANONYMIZED: "Töötaja anonüümseks muudetud",
@@ -203,15 +215,33 @@ function auditActionLabel(action: string) {
   )[action] ?? action;
 }
 
-export default function App() {
+class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("SiteClocki haldusliidese viga", error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.failed)
+      return <main className="login-shell"><section className="login-card"><h1>SiteClock</h1><p>Vaate laadimisel tekkis viga.</p><button onClick={() => window.location.reload()}>Laadi uuesti</button></section></main>;
+    return this.props.children;
+  }
+}
+
+function SiteClockApp() {
   const [language, setLanguage] = useState<WebLanguage>(initialWebLanguage);
   const t = (key: WebTranslationKey) => webTranslate(language, key);
   const u = (text: string) => webUiText(language, text);
   const a = (text: string) => webAccountText(language, text);
   const changeLanguage = (next: WebLanguage) => { setLanguage(next); persistWebLanguage(next); };
   const [token, setToken] = useState("");
-  const [email, setEmail] = useState("owner@example.com");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [developmentCode, setDevelopmentCode] = useState("");
@@ -231,8 +261,8 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
   const [reportFilters, setReportFilters] = useState({
-    from: "2026-07-01",
-    to: "2026-07-31",
+    from: `${localDateValue().slice(0, 8)}01`,
+    to: localDateValue(),
     siteId: "",
   });
   const [tab, setTab] = useState<
@@ -264,10 +294,12 @@ export default function App() {
   const [siteForm, setSiteForm] = useState({
     name: "",
     address: "",
-    latitude: "59.437",
-    longitude: "24.7536",
+    latitude: "",
+    longitude: "",
     radiusMeters: "200",
   });
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
+  const [locatingSite, setLocatingSite] = useState(false);
   const [entranceNames, setEntranceNames] = useState<Record<string, string>>(
     {},
   );
@@ -289,13 +321,14 @@ export default function App() {
         corrections: CorrectionRequest[];
         presence: PresenceRow[];
       }>("/v1/manager/dashboard", accessToken);
-      setClients(dashboard.clients);
-      if (dashboard.clients[0])
-        setWorkerForm((current) => ({ ...current, clientId: dashboard.clients[0].id }));
-      setSites(dashboard.sites);
-      setWorkers(dashboard.workers);
-      setCorrections(dashboard.corrections);
-      setPresence(dashboard.presence);
+      const dashboardClients = ensureArray<Client>(dashboard.clients, "Kliendid");
+      setClients(dashboardClients);
+      if (dashboardClients[0])
+        setWorkerForm((current) => ({ ...current, clientId: dashboardClients[0].id }));
+      setSites(ensureArray<Site>(dashboard.sites, "Töömaad"));
+      setWorkers(ensureArray<Worker>(dashboard.workers, "Töötajad"));
+      setCorrections(ensureArray<CorrectionRequest>(dashboard.corrections, "Parandustaotlused"));
+      setPresence(ensureArray<PresenceRow>(dashboard.presence, "Kohalolijad"));
       return;
     }
     const [
@@ -323,17 +356,29 @@ export default function App() {
         api<AuditLog[]>("/v1/admin/audit-logs", accessToken),
         api<Manager[]>("/v1/admin/managers", accessToken),
       ]);
-    setClients(clientRows);
-    setInvoices(invoiceRows);
-    setOutbox(messageRows);
-    setSites(siteRows);
-    setWorkers(workerRows);
-    setCorrections(correctionRows);
-    setPresence(presenceRows);
-    setAuditLogs(auditRows);
-    setManagers(managerRows);
+    setClients(ensureArray<Client>(clientRows, "Kliendid"));
+    setInvoices(ensureArray<Invoice>(invoiceRows, "Arved"));
+    setOutbox(ensureArray<OutboxMessage>(messageRows, "Saatmisjärjekord"));
+    setSites(ensureArray<Site>(siteRows, "Töömaad"));
+    setWorkers(ensureArray<Worker>(workerRows, "Töötajad"));
+    setCorrections(ensureArray<CorrectionRequest>(correctionRows, "Parandustaotlused"));
+    setPresence(ensureArray<PresenceRow>(presenceRows, "Kohalolijad"));
+    setAuditLogs(ensureArray<AuditLog>(auditRows, "Auditilogi"));
+    setManagers(ensureArray<Manager>(managerRows, "Meistrid"));
     if (!workerForm.clientId && clientRows[0])
       setWorkerForm((current) => ({ ...current, clientId: clientRows[0].id }));
+  }
+
+  async function logoutAdmin() {
+    try {
+      await api("/v1/auth/logout", token, { method: "POST", body: "{}" });
+    } catch {
+      // Local logout must still complete if the server is unavailable.
+    } finally {
+      setToken("");
+      setChallengeId("");
+      setVerificationCode("");
+    }
   }
 
   async function login(event: FormEvent) {
@@ -565,13 +610,23 @@ export default function App() {
     setBusy(true);
     setError("");
     try {
-      await api("/v1/admin/sites", token, {
-        method: "POST",
+      let latitude = siteForm.latitude.trim() ? Number(siteForm.latitude) : Number.NaN;
+      let longitude = siteForm.longitude.trim() ? Number(siteForm.longitude) : Number.NaN;
+      if ((!Number.isFinite(latitude) || !Number.isFinite(longitude)) && siteForm.address.trim()) {
+        const coordinates = await api<{ latitude: number; longitude: number }>(
+          `/v1/admin/geocode?address=${encodeURIComponent(siteForm.address.trim())}`,
+          token,
+        );
+        latitude = coordinates.latitude;
+        longitude = coordinates.longitude;
+      }
+      await api(editingSiteId ? `/v1/admin/sites/${editingSiteId}` : "/v1/admin/sites", token, {
+        method: editingSiteId ? "PUT" : "POST",
         body: JSON.stringify({
           name: siteForm.name,
           address: siteForm.address,
-          latitude: Number(siteForm.latitude),
-          longitude: Number(siteForm.longitude),
+          latitude,
+          longitude,
           radiusMeters: Number(siteForm.radiusMeters),
           clientId: clients[0]?.id,
         }),
@@ -579,13 +634,94 @@ export default function App() {
       setSiteForm({
         name: "",
         address: "",
-        latitude: "59.437",
-        longitude: "24.7536",
+        latitude: "",
+        longitude: "",
         radiusMeters: "200",
       });
+      setEditingSiteId(null);
       await loadAll(token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Töömaad ei lisatud");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function findSiteAddress() {
+    if (!siteForm.address.trim()) return setError("Sisesta esmalt töömaa aadress.");
+    setLocatingSite(true);
+    setError("");
+    try {
+      const result = await api<{ latitude: number; longitude: number }>(
+        `/v1/admin/geocode?address=${encodeURIComponent(siteForm.address.trim())}`,
+        token,
+      );
+      setSiteForm((current) => ({
+        ...current,
+        latitude: result.latitude.toFixed(6),
+        longitude: result.longitude.toFixed(6),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aadressi ei leitud");
+    } finally {
+      setLocatingSite(false);
+    }
+  }
+
+  function useCurrentSiteLocation() {
+    if (!navigator.geolocation) return setError("Brauser ei toeta asukoha määramist.");
+    setLocatingSite(true);
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setSiteForm((current) => ({
+          ...current,
+          latitude: coords.latitude.toFixed(6),
+          longitude: coords.longitude.toFixed(6),
+        }));
+        setLocatingSite(false);
+      },
+      () => {
+        setError("Asukohta ei saadud. Luba brauseris asukoha kasutamine ja proovi uuesti.");
+        setLocatingSite(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  }
+
+  function editSite(site: Site) {
+    setEditingSiteId(site.id);
+    setSiteForm({
+      name: site.name,
+      address: site.address,
+      latitude: site.latitude.toFixed(6),
+      longitude: site.longitude.toFixed(6),
+      radiusMeters: String(site.radiusMeters),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelSiteEdit() {
+    setEditingSiteId(null);
+    setSiteForm({ name: "", address: "", latitude: "", longitude: "", radiusMeters: "200" });
+    setError("");
+  }
+
+  async function removeSite(site: Site) {
+    const messages = {
+      et: `Kas eemaldada töömaa „${site.name}”? Varasemad tööajaandmed säilivad.`,
+      fi: `Poistetaanko työmaa ”${site.name}”? Aiemmat työaikatiedot säilyvät.`,
+      en: `Remove the site “${site.name}”? Previous timesheet data will be retained.`,
+    };
+    if (!window.confirm(messages[language])) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/v1/admin/sites/${site.id}`, token, { method: "DELETE" });
+      if (editingSiteId === site.id) cancelSiteEdit();
+      await loadAll(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Töömaad ei saanud eemaldada");
     } finally {
       setBusy(false);
     }
@@ -614,7 +750,7 @@ export default function App() {
     setError("");
     try {
       const response = await fetch(
-        `${apiUrl}/v1/admin/entrances/${entrance.id}/qr-sheet.pdf`,
+        `${apiUrl}/v1/admin/entrances/${entrance.id}/qr-sheet.pdf?lang=${language}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok)
@@ -711,6 +847,25 @@ export default function App() {
       await loadAll(token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Töötajat ei saanud muuta");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeWorker(worker: Worker) {
+    const messages = {
+      et: `Kas eemaldada töötaja „${worker.name}”? Tema varasem tunnileht säilib.`,
+      fi: `Poistetaanko työntekijä ”${worker.name}”? Hänen aiempi työaikakirjanpitonsa säilyy.`,
+      en: `Remove the worker “${worker.name}”? Their previous timesheet data will be retained.`,
+    };
+    if (!window.confirm(messages[language])) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/v1/admin/workers/${worker.id}`, token, { method: "DELETE" });
+      await loadAll(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Töötajat ei saanud eemaldada");
     } finally {
       setBusy(false);
     }
@@ -1020,7 +1175,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <button className="logout" onClick={() => setToken("")}>
+        <button className="logout" onClick={logoutAdmin}>
           {t("logout")}
         </button>
         <LanguagePicker language={language} onChange={changeLanguage} label={t("language")} compact />
@@ -1044,7 +1199,7 @@ export default function App() {
                     audit: t("audit"),
                   }[tab]}
             </h1>
-            <p>18. juuli 2026</p>
+            <p>{new Intl.DateTimeFormat(language === "fi" ? "fi-FI" : language === "en" ? "en-GB" : "et-EE", { dateStyle: "long" }).format(new Date())}</p>
           </div>
           <button className="refresh" onClick={() => loadAll(token)}>
             {t("refreshData")}
@@ -1080,16 +1235,16 @@ export default function App() {
                 <button
                   disabled={busy}
                   onClick={() =>
-                    runBilling("/v1/admin/billing/generate", "2026-07-01")
+                    runBilling("/v1/admin/billing/generate", `${localDateValue().slice(0, 8)}01`)
                   }
                 >
-                  Koosta juulikuu arved
+                  Koosta jooksva kuu arved
                 </button>
                 <button
                   className="secondary"
                   disabled={busy}
                   onClick={() =>
-                    runBilling("/v1/admin/billing/reminders/run", "2026-07-16")
+                    runBilling("/v1/admin/billing/reminders/run", localDateValue())
                   }
                 >
                   Kontrolli meeldetuletusi
@@ -1508,7 +1663,8 @@ export default function App() {
                               {u("Lähtesta PIN")}
                             </button>
                             <button className="table-action" disabled={busy} onClick={() => exportWorkerData(worker)}>{u("Ekspordi andmed")}</button>
-                            {!worker.name.startsWith("Anonüümne töötaja") && <button className="table-action danger" disabled={busy} onClick={() => anonymizeWorker(worker)}>{u("Anonümiseeri")}</button>}
+                            <button className="table-action danger" disabled={busy} onClick={() => removeWorker(worker)}>{u("Eemalda töötaja")}</button>
+                            {sessionRole === "admin" && !worker.name.startsWith("Anonüümne töötaja") && <button className="table-action danger" disabled={busy} onClick={() => anonymizeWorker(worker)}>{u("Anonümiseeri")}</button>}
                           </div>
                         </td>
                       </tr>
@@ -1524,7 +1680,7 @@ export default function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>{u("Lisa töömaa")}</h2>
+                  <h2>{editingSiteId ? u("Muuda töömaad") : u("Lisa töömaa")}</h2>
                   <p>{u("Asukohta kasutatakse QR-registreeringu kontrollimiseks")}</p>
                 </div>
               </div>
@@ -1547,11 +1703,13 @@ export default function App() {
                       setSiteForm({ ...siteForm, address: e.target.value })
                     }
                   />
+                  <button type="button" className="secondary-action" disabled={locatingSite || !siteForm.address.trim()} onClick={findSiteAddress}>
+                    {locatingSite ? u("Otsin asukohta…") : u("Leia aadressi asukoht")}
+                  </button>
                 </label>
                 <label>
                   {u("Laiuskraad")}
                   <input
-                    required
                     type="number"
                     step="0.000001"
                     value={siteForm.latitude}
@@ -1563,7 +1721,6 @@ export default function App() {
                 <label>
                   {u("Pikkuskraad")}
                   <input
-                    required
                     type="number"
                     step="0.000001"
                     value={siteForm.longitude}
@@ -1571,6 +1728,9 @@ export default function App() {
                       setSiteForm({ ...siteForm, longitude: e.target.value })
                     }
                   />
+                  <button type="button" className="secondary-action" disabled={locatingSite} onClick={useCurrentSiteLocation}>
+                    {u("Kasuta minu praegust asukohta")}
+                  </button>
                 </label>
                 <label>
                   {u("Lubatud raadius (m)")}
@@ -1585,9 +1745,12 @@ export default function App() {
                     }
                   />
                 </label>
-                <button disabled={busy}>
-                  {busy ? u("Salvestan…") : u("Loo töömaa")}
-                </button>
+                <div className="site-form-actions">
+                  <button disabled={busy || locatingSite}>
+                    {busy ? u("Salvestan…") : editingSiteId ? u("Salvesta töömaa") : u("Loo töömaa")}
+                  </button>
+                  {editingSiteId && <button type="button" className="secondary-action" disabled={busy} onClick={cancelSiteEdit}>{u("Tühista muutmine")}</button>}
+                </div>
               </form>
             </section>
             <div className="site-grid">
@@ -1606,7 +1769,7 @@ export default function App() {
                           {site.radiusMeters} m
                         </p>
                       </div>
-                      <div className="row-actions"><button className="table-action" onClick={() => openPresenceList(site)}>{u("Kohalolijate PDF")}</button><span className="pill paid">{u("Aktiivne")}</span></div>
+                      <div className="row-actions"><button className="table-action" disabled={busy} onClick={() => editSite(site)}>{u("Muuda asukohta")}</button><button className="table-action" onClick={() => openPresenceList(site)}>{u("Kohalolijate PDF")}</button><button className="table-action danger" disabled={busy} onClick={() => removeSite(site)}>{u("Eemalda töömaa")}</button><span className="pill paid">{u("Aktiivne")}</span></div>
                     </div>
                     <div className="site-meta">
                       <span>GPS</span>
@@ -1855,6 +2018,10 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+export default function App() {
+  return <AppErrorBoundary><SiteClockApp /></AppErrorBoundary>;
 }
 
 function LanguagePicker({ language, onChange, label, compact = false }: { language: WebLanguage; onChange: (language: WebLanguage) => void; label: string; compact?: boolean }) {
