@@ -8,9 +8,14 @@ export function startScheduler({ runDaily, processEmails }) {
     if (next <= now) next.setDate(next.getDate() + 1);
     dailyTimer = setTimeout(async () => {
       if (stopped) return;
-      runDaily(new Date());
-      await processEmails();
-      scheduleDaily();
+      try {
+        await runDaily(new Date());
+        await processEmails();
+      } catch (error) {
+        console.error("Igapäevase automaatika viga:", error);
+      } finally {
+        if (!stopped) scheduleDaily();
+      }
     }, next.getTime() - now.getTime());
   };
   scheduleDaily();

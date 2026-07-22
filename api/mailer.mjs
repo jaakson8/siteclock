@@ -83,6 +83,7 @@ export function createEmailProcessor({
   clients,
   save,
   moduleDirectory,
+  revealCode = (message) => message.code,
 }) {
   const smtpConfigured = Boolean(
     process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS,
@@ -91,16 +92,26 @@ export function createEmailProcessor({
     process.env.SMS_WEBHOOK_URL && process.env.SMS_WEBHOOK_TOKEN,
   );
   const transport = smtpConfigured
-    ? nodemailer.createTransport({
+      ? nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: Number(process.env.SMTP_PORT ?? 587),
         secure: process.env.SMTP_SECURE === "true",
         auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
       })
     : null;
 
   return async function processPendingEmails(now = new Date()) {
     const results = [];
+    for (const message of outbox.filter((item) => item.status === "PROCESSING")) {
+      const started = Date.parse(message.processingAt ?? message.createdAt ?? "");
+      if (!Number.isFinite(started) || now.getTime() - started > 2 * 60_000) {
+        message.status = "RETRY";
+        message.nextAttemptAt = now.toISOString();
+      }
+    }
     for (const message of outbox.filter(
       (item) =>
         !["SENT", "PROCESSING"].includes(item.status) &&
@@ -113,7 +124,9 @@ export function createEmailProcessor({
           continue;
         }
         message.status = "PROCESSING";
+        message.processingAt = now.toISOString();
         try {
+          const code = message.protectedCode ? revealCode(message.protectedCode) : message.code;
           const smsResponse = await fetch(process.env.SMS_WEBHOOK_URL, {
             method: "POST",
             headers: {
@@ -122,17 +135,23 @@ export function createEmailProcessor({
             },
             body: JSON.stringify({
               to: message.to,
-              message: `SiteClocki PIN-i taastamiskood on ${message.code}. Kood kehtib 10 minutit.`,
+              message: `SiteClocki PIN-i taastamiskood on ${code}. Kood kehtib 10 minutit.`,
             }),
+            signal: AbortSignal.timeout(10_000),
           });
           if (!smsResponse.ok)
             throw new Error(`SMS-teenus vastas staatusega ${smsResponse.status}`);
           message.status = "SENT";
           message.sentAt = new Date().toISOString();
           delete message.code;
+          delete message.protectedCode;
         } catch (error) {
           message.attempts = (message.attempts ?? 0) + 1;
           message.status = message.attempts >= 5 ? "FAILED" : "RETRY";
+          if (message.status === "FAILED") {
+            delete message.code;
+            delete message.protectedCode;
+          }
           message.lastError = error.message;
           message.nextAttemptAt = new Date(
             Date.now() + Math.min(60, 2 ** message.attempts) * 60_000,
@@ -147,6 +166,7 @@ export function createEmailProcessor({
         continue;
       }
       message.status = "PROCESSING";
+      message.processingAt = now.toISOString();
       try {
         const invoice = invoices.find((item) => item.id === message.invoiceId);
         const client = invoice
@@ -179,9 +199,14 @@ export function createEmailProcessor({
         message.sentAt = new Date().toISOString();
         message.providerMessageId = info.messageId;
         delete message.code;
+        delete message.protectedCode;
       } catch (error) {
         message.attempts = (message.attempts ?? 0) + 1;
         message.status = message.attempts >= 5 ? "FAILED" : "RETRY";
+        if (message.status === "FAILED") {
+          delete message.code;
+          delete message.protectedCode;
+        }
         message.lastError = error.message;
         message.nextAttemptAt = new Date(
           Date.now() + Math.min(60, 2 ** message.attempts) * 60_000,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { createApiServer, validateProductionConfig, validateScanTimestamp } from './server.mjs';
+import { calculateShiftMinutes, createApiServer, validateProductionConfig, validateScanTimestamp } from './server.mjs';
 
 let server;
 let baseUrl;
@@ -35,6 +35,12 @@ test('tootmiskeskkond ei käivitu vaikimisi paroolide või püsimäluta', () => 
   assert.throws(() => validateProductionConfig({ NODE_ENV: 'production', ADMIN_PASSWORD: 'lühike', DATABASE_PATH: ':memory:' }), /seadistus vigane/);
   assert.throws(() => validateProductionConfig({ NODE_ENV: 'production', ADMIN_PASSWORD: 'MUUDA-VÄHEMALT-12-MÄRGILISEKS', MANAGER_PASSWORD: 'teine-turvaline-parool', ADMIN_EMAIL: 'admin@objektiaeg.ee', DATABASE_PATH: '/data/app.sqlite', CORS_ORIGIN: 'https://pilot.objektiaeg.ee', SELLER_NAME: 'Objektiaeg OÜ', SELLER_REGISTRY_CODE: '12345678', SELLER_IBAN: 'EE001' }), /ADMIN_PASSWORD/);
   assert.equal(validateProductionConfig({ NODE_ENV: 'production', ADMIN_PASSWORD: 'turvaline-parool-123', MANAGER_PASSWORD: 'teine-turvaline-parool-456', ADMIN_EMAIL: 'admin@objektiaeg.ee', DATABASE_PATH: '/data/app.sqlite', CORS_ORIGIN: 'https://pilot.objektiaeg.ee', SELLER_NAME: 'Objektiaeg OÜ', SELLER_REGISTRY_CODE: '12345678', SELLER_IBAN: 'EE001', SMTP_HOST: 'smtp.objektiaeg.ee', SMTP_USER: 'mailer', SMTP_PASS: 'smtp-secret', SMS_WEBHOOK_URL: 'https://sms.objektiaeg.ee/send', SMS_WEBHOOK_TOKEN: 'sms-token-123456789' }), true);
+  assert.throws(() => validateProductionConfig({ NODE_ENV: 'staging' }), /seadistus vigane/);
+});
+
+test('üle südaöö kestev vahetus ei anna negatiivset tööaega', () => {
+  assert.equal(calculateShiftMinutes('22:00', '06:00'), 480);
+  assert.equal(calculateShiftMinutes('08:00', '16:30'), 510);
 });
 
 test('offline-skaneeringu aeg välistab tuleviku ja üle 24 tunni vanuse kande', () => {
@@ -55,7 +61,14 @@ test('liiga suur päring blokeeritakse enne JSON-i töötlemist', async () => {
   assert.equal(body.requestId, 'pilot-test-request-001');
 });
 
-test('konto seotakse olemasoleva töötajaga', async () => {
+test('konto esmane PIN nõuab SMS-koodi ja seotakse seejärel töötajaga', async () => {
+  const unverified = await fetch(`${baseUrl}/v1/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Martin Kask', phone: '+372 5555 1234', pin: '1234' }) });
+  assert.equal(unverified.status, 403);
+  assert.equal((await unverified.json()).code, 'PIN_SETUP_REQUIRED');
+  const recoveryRequest = await fetch(`${baseUrl}/v1/auth/recovery/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '+372 5555 1234' }) });
+  const challenge = await recoveryRequest.json();
+  const setup = await fetch(`${baseUrl}/v1/auth/recovery/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, code: challenge.developmentCode, newPin: '1234' }) });
+  assert.equal(setup.status, 200);
   const response = await fetch(`${baseUrl}/v1/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Martin Kask', phone: '+372 5555 1234', pin: '1234' }) });
   assert.equal(response.status, 200);
   const body = await response.json();
@@ -206,6 +219,18 @@ test('peakasutaja saab luua töömaa ja sissepääsu', async () => {
   entranceId = (await entranceResponse.json()).id;
 });
 
+test('peakasutaja saab töömaa asukohta muuta ja vigased koordinaadid blokeeritakse', async () => {
+  const update = await fetch(`${baseUrl}/v1/admin/sites/${siteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ name: 'Testobjekt', address: 'Oravakuja 1D, Vantaa', latitude: 60.2931, longitude: 24.9634, radiusMeters: 250 }) });
+  assert.equal(update.status, 200);
+  const site = await update.json();
+  assert.equal(site.address, 'Oravakuja 1D, Vantaa');
+  assert.equal(site.latitude, 60.2931);
+  assert.equal(site.radiusMeters, 250);
+  const invalid = await fetch(`${baseUrl}/v1/admin/sites/${siteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ name: 'Testobjekt', latitude: 123, longitude: 24.9634, radiusMeters: 250 }) });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).code, 'INVALID_SITE');
+});
+
 test('peakasutaja saab lisada töötaja ja siduda ta töömaaga', async () => {
   const response = await fetch(`${baseUrl}/v1/admin/workers`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ clientId: 'client-1', name: 'Jaan Lepp', phone: '+37255550001', jobTitle: 'Betoneerija', assignedSiteIds: [siteId] }) });
   assert.equal(response.status, 201);
@@ -251,6 +276,16 @@ test('meister logib sisse ja näeb ainult oma kliendi tööandmeid', async () =>
   assert.ok((await report.json()).every((row) => row.companyName === 'Demo Ehitus OÜ'));
   const csv = await fetch(`${baseUrl}/v1/admin/attendance-report.csv?from=2026-07-18&to=2026-07-18`, { headers: { Authorization: `Bearer ${managerToken}` } });
   assert.equal(csv.headers.get('content-type'), 'text/csv; charset=utf-8');
+  const removedWorker = await fetch(`${baseUrl}/v1/admin/workers/${managerWorker.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${managerToken}` } });
+  assert.equal(removedWorker.status, 200);
+  assert.equal((await removedWorker.json()).removed, true);
+  const removedSite = await fetch(`${baseUrl}/v1/admin/sites/${managerSite.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${managerToken}` } });
+  assert.equal(removedSite.status, 200);
+  assert.equal((await removedSite.json()).removed, true);
+  const dashboardAfterRemoval = await fetch(`${baseUrl}/v1/manager/dashboard`, { headers: { Authorization: `Bearer ${managerToken}` } });
+  const afterRemoval = await dashboardAfterRemoval.json();
+  assert.ok(!afterRemoval.workers.some((worker) => worker.id === managerWorker.id));
+  assert.ok(!afterRemoval.sites.some((site) => site.id === managerSite.id));
 });
 
 test('peakasutaja haldab meistrite ja projektijuhtide kontosid', async () => {
@@ -281,11 +316,13 @@ test('peakasutaja haldab meistrite ja projektijuhtide kontosid', async () => {
 
 test('sissepääsu prinditav IN/OUT QR-leht genereeritakse', async () => {
   process.env.PYTHON_BIN = '/Users/jaakviik/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3';
-  const response = await fetch(`${baseUrl}/v1/admin/entrances/${entranceId}/qr-sheet.pdf`, { headers: { Authorization: `Bearer ${adminToken}` } });
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('content-type'), 'application/pdf');
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  assert.equal(new TextDecoder().decode(bytes.slice(0, 4)), '%PDF');
+  for (const language of ['et', 'fi', 'en']) {
+    const response = await fetch(`${baseUrl}/v1/admin/entrances/${entranceId}/qr-sheet.pdf?lang=${language}`, { headers: { Authorization: `Bearer ${adminToken}` } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/pdf');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(new TextDecoder().decode(bytes.slice(0, 4)), '%PDF');
+  }
 });
 
 test('töömaa prinditav kohalolijate PDF genereeritakse', async () => {
@@ -370,6 +407,11 @@ test('arve saab märkida tasutuks ja krediteerida', async () => {
   const credit = await credited.json();
   assert.equal(credit.totalCents, -12276);
   assert.equal(credit.documentType, 'CREDIT_NOTE');
+  const nextRun = await fetch(`${baseUrl}/v1/admin/billing/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ date: '2026-08-01' }) });
+  assert.equal(nextRun.status, 201);
+  const allInvoices = await (await fetch(`${baseUrl}/v1/admin/invoices`, { headers: { Authorization: `Bearer ${adminToken}` } })).json();
+  const regularNumbers = allInvoices.filter((item) => item.documentType !== 'CREDIT_NOTE').map((item) => item.number);
+  assert.equal(new Set(regularNumbers).size, regularNumbers.length);
 });
 
 test('peakasutaja toimingud jäävad auditilogisse', async () => {
