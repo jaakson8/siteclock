@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "SiteClock",
+    "slug": "siteclock",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/siteclock-icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#1f2d24"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.siteclock.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SiteClock vajab kaamerat QR-koodi skaneerimiseks.",
+        "NSLocationWhenInUseUsageDescription": "SiteClock kontrollib asukohta ainult registreerimise hetkel."
+      }
+    },
+    "android": {
+      "package": "com.siteclock.app",
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SiteClock vajab kaamerat QR-koodi skaneerimiseks."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SiteClock kontrollib asukohta ainult registreerimise hetkel."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://siteclock-api.onrender.com"
+    }
+  }
+}
