@@ -13,25 +13,25 @@
 }
 .site-form input,
 .entrance-add input {
-  border: 1px solid #cdd8d4;
+  border: 1px solid #d5deea;
   border-radius: 9px;
   padding: 10px;
   background: white;
-  color: #172126;
+  color: #10243e;
 }
 .site-form button,
 .entrance-add button {
   border: 0;
   border-radius: 10px;
   padding: 11px 14px;
-  background: #173f35;
-  color: white;
+  background: #ffc928;
+  color: #0b1f3a;
   font-weight: 700;
 }
 .site-form .secondary-action {
-  border: 1px solid #b8c7c1;
-  background: #f4f7f6;
-  color: #173f35;
+  border: 1px solid #c5d1e0;
+  background: #f3f6fa;
+  color: #0b1f3a;
 }
 .site-form button:disabled {
   cursor: not-allowed;
@@ -53,12 +53,12 @@
   display: flex;
   justify-content: space-between;
   padding: 14px 20px;
-  border-bottom: 1px solid #edf1ef;
+  border-bottom: 1px solid #e8edf4;
   font-size: 14px;
 }
 .site-meta span,
 .muted-copy {
-  color: #718079;
+  color: #6b7b90;
 }
 .entrances {
   padding: 18px 20px;
@@ -72,7 +72,7 @@
   align-items: center;
   gap: 12px;
   padding: 11px 0;
-  border-bottom: 1px solid #edf1ef;
+  border-bottom: 1px solid #e8edf4;
 }
 .entrance-add {
   display: grid;

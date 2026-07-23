@@ -13,19 +13,19 @@
 }
 .worker-form input,
 .worker-form select {
-  border: 1px solid #cdd8d4;
+  border: 1px solid #d5deea;
   border-radius: 9px;
   padding: 10px;
   background: white;
-  color: #172126;
+  color: #10243e;
   min-width: 0;
 }
 .worker-form button {
   border: 0;
   border-radius: 10px;
   padding: 11px 14px;
-  background: #173f35;
-  color: white;
+  background: #ffc928;
+  color: #0b1f3a;
   font-weight: 700;
 }
 @media (max-width: 1000px) {
