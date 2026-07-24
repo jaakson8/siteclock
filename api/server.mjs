@@ -1043,6 +1043,21 @@ export function createApiServer() {
           });
         }
         clearAuthFailures(rateLimitKey);
+        if (loginUser.role === "admin") {
+          const accessToken = createSession(loginUser);
+          audit(loginUser, "ADMIN_LOGIN_SUCCEEDED", "SESSION", accessToken.slice(0, 12));
+          return json(response, 200, {
+            id: loginUser.id,
+            name: loginUser.name,
+            email: loginUser.email,
+            role: loginUser.role,
+            clientId: null,
+            mustChangePassword: false,
+            requiresTwoFactor: false,
+            accessToken,
+            expiresInSeconds: 28800,
+          });
+        }
         const challengeId = randomUUID();
         const code = String(randomInt(100000, 1000000));
         authChallenges.set(challengeId, {
