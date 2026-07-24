@@ -386,17 +386,30 @@ function SiteClockApp() {
     setBusy(true);
     setError("");
     try {
-      const challenge = await api<{
-        challengeId: string;
+      const loginResult = await api<{
+        challengeId?: string;
         developmentCode?: string;
+        accessToken?: string;
+        role?: "admin" | "manager";
+        mustChangePassword?: boolean;
       }>("/v1/admin/auth/login", "", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      setChallengeId(challenge.challengeId);
-      setDevelopmentCode(challenge.developmentCode ?? "");
-      if (challenge.developmentCode)
-        setVerificationCode(challenge.developmentCode);
+      if (loginResult.accessToken && loginResult.role) {
+        setSessionRole(loginResult.role);
+        setMustChangePassword(Boolean(loginResult.mustChangePassword));
+        setToken(loginResult.accessToken);
+        if (!loginResult.mustChangePassword)
+          await loadAll(loginResult.accessToken, loginResult.role);
+        return;
+      }
+      if (!loginResult.challengeId)
+        throw new Error("Sisselogimise vastus oli vigane");
+      setChallengeId(loginResult.challengeId);
+      setDevelopmentCode(loginResult.developmentCode ?? "");
+      if (loginResult.developmentCode)
+        setVerificationCode(loginResult.developmentCode);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Sisselogimine ebaõnnestus",
