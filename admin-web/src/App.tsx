@@ -162,20 +162,21 @@ function localDateValue(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function euro(cents: number) {
-  return new Intl.NumberFormat("et-EE", {
+function euro(cents: number, language: WebLanguage = "et") {
+  return new Intl.NumberFormat(language === "fi" ? "fi-FI" : language === "en" ? "en-GB" : "et-EE", {
     style: "currency",
     currency: "EUR",
   }).format(cents / 100);
 }
-function statusLabel(status: Invoice["status"]) {
-  return {
+function statusLabel(status: Invoice["status"], language: WebLanguage = "et") {
+  const label = {
     DRAFT: "Mustand",
     SENT: "Saadetud",
     PAID: "Tasutud",
     OVERDUE: "Tähtaja ületanud",
     CREDITED: "Krediteeritud",
   }[status];
+  return webUiText(language, label);
 }
 function auditActionLabel(action: string) {
   return (
@@ -1224,10 +1225,10 @@ function SiteClockApp() {
             <section className="stats">
               <Stat label={t("activeClients")} value={String(clients.length)} />
               <Stat label={t("currentlyOnSite")} value={String(presence.length)} />
-              <Stat label={t("totalInvoices")} value={euro(totals.billed)} />
+              <Stat label={t("totalInvoices")} value={euro(totals.billed, language)} />
               <Stat
                 label={t("overdue")}
-                value={euro(totals.overdue)}
+                value={euro(totals.overdue, language)}
                 warning={totals.overdue > 0}
               />
               <Stat label={t("queued")} value={String(outbox.length)} />
@@ -1240,8 +1241,8 @@ function SiteClockApp() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Arvelduse automaatika</h2>
-                  <p>Testtoimingud ei saada päris e-kirju.</p>
+                  <h2>{u("Arvelduse automaatika")}</h2>
+                  <p>{u("Testtoimingud ei saada päris e-kirju.")}</p>
                 </div>
               </div>
               <div className="automation">
@@ -1251,7 +1252,7 @@ function SiteClockApp() {
                     runBilling("/v1/admin/billing/generate", `${localDateValue().slice(0, 8)}01`)
                   }
                 >
-                  Koosta jooksva kuu arved
+                  {u("Koosta jooksva kuu arved")}
                 </button>
                 <button
                   className="secondary"
@@ -1260,11 +1261,11 @@ function SiteClockApp() {
                     runBilling("/v1/admin/billing/reminders/run", localDateValue())
                   }
                 >
-                  Kontrolli meeldetuletusi
+                  {u("Kontrolli meeldetuletusi")}
                 </button>
               </div>
             </section>
-            <InvoiceTable rows={invoices.slice(0, 5)} onPdf={openPdf} />
+            <InvoiceTable rows={invoices.slice(0, 5)} onPdf={openPdf} language={language} />
           </>
         )}
         {tab === "overview" && sessionRole === "manager" && (
@@ -1459,7 +1460,7 @@ function SiteClockApp() {
                         <td>{client.registryCode}</td>
                         <td>{client.billingEmail}</td>
                         <td>{client.language?.toUpperCase() ?? "ET"}</td>
-                        <td>{euro(client.monthlyFeeCents)}</td>
+                        <td>{euro(client.monthlyFeeCents, language)}</td>
                         <td>{((client.vatRate ?? 0.24) * 100).toLocaleString(language === "fi" ? "fi-FI" : language === "en" ? "en-GB" : "et-EE")}%</td>
                         <td>
                           <span className="pill sent">
@@ -1942,7 +1943,7 @@ function SiteClockApp() {
             </section>
           </>
         )}
-        {tab === "invoices" && <InvoiceTable rows={invoices} onPdf={openPdf} />}
+        {tab === "invoices" && <InvoiceTable rows={invoices} onPdf={openPdf} language={language} />}
         {tab === "outbox" && (
           <section className="panel">
             <div className="panel-head">
@@ -2068,32 +2069,35 @@ function Empty({ text, detail = "Andmed ilmuvad siia pärast toimingu tegemist."
 function InvoiceTable({
   rows,
   onPdf,
+  language,
 }: {
   rows: Invoice[];
   onPdf: (invoice: Invoice, action?: "pdf" | "paid" | "credit") => void;
+  language: WebLanguage;
 }) {
+  const translate = (text: string) => webUiText(language, text);
   return (
     <section className="panel">
       <div className="panel-head">
         <div>
-          <h2>Arved</h2>
-          <p>Viimased koostatud ja saadetud arved</p>
+          <h2>{translate("Arved")}</h2>
+          <p>{translate("Viimased koostatud ja saadetud arved")}</p>
         </div>
       </div>
       {rows.length === 0 ? (
-        <Empty text="Arveid pole veel koostatud" />
+        <Empty text={translate("Arveid pole veel koostatud")} detail={translate("Andmed ilmuvad siia pärast toimingu tegemist.")} />
       ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Arve nr</th>
-                <th>Klient</th>
-                <th>Kuupäev</th>
-                <th>Maksetähtaeg</th>
-                <th>Summa</th>
-                <th>Olek</th>
-                <th>Toimingud</th>
+                <th>{translate("Arve nr")}</th>
+                <th>{translate("Klient")}</th>
+                <th>{translate("Kuupäev")}</th>
+                <th>{translate("Maksetähtaeg")}</th>
+                <th>{translate("Summa")}</th>
+                <th>{translate("Olek")}</th>
+                <th>{translate("Toimingud")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2105,10 +2109,10 @@ function InvoiceTable({
                   <td>{invoice.clientName}</td>
                   <td>{invoice.issuedDate}</td>
                   <td>{invoice.dueDate}</td>
-                  <td>{euro(invoice.totalCents)}</td>
+                  <td>{euro(invoice.totalCents, language)}</td>
                   <td>
                     <span className={`pill ${invoice.status.toLowerCase()}`}>
-                      {statusLabel(invoice.status)}
+                      {statusLabel(invoice.status, language)}
                     </span>
                   </td>
                   <td>
@@ -2125,7 +2129,7 @@ function InvoiceTable({
                             className="table-action"
                             onClick={() => onPdf(invoice, "paid")}
                           >
-                            Märgi tasutuks
+                            {translate("Märgi tasutuks")}
                           </button>
                         )}
                       {invoice.documentType !== "CREDIT_NOTE" &&
@@ -2134,7 +2138,7 @@ function InvoiceTable({
                             className="table-action danger"
                             onClick={() => onPdf(invoice, "credit")}
                           >
-                            Kreeditarve
+                            {translate("Kreeditarve")}
                           </button>
                         )}
                     </div>
