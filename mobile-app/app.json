@@ -2,42 +2,63 @@
   "expo": {
     "name": "SiteClock",
     "slug": "siteclock",
+    "description": "Töömaa QR-põhine kohaloleku ja tööaja registreerimine.",
     "version": "1.0.0",
+    "scheme": "siteclock",
     "orientation": "portrait",
     "icon": "./assets/siteclock-icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#1f2d24"
-    },
-    "assetBundlePatterns": ["**/*"],
-    "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "com.siteclock.app",
-      "infoPlist": {
-        "NSCameraUsageDescription": "SiteClock vajab kaamerat QR-koodi skaneerimiseks.",
-        "NSLocationWhenInUseUsageDescription": "SiteClock kontrollib asukohta ainult registreerimise hetkel."
-      }
-    },
-    "android": {
-      "package": "com.siteclock.app",
-      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION"]
-    },
     "plugins": [
       [
         "expo-camera",
         {
-          "cameraPermission": "SiteClock vajab kaamerat QR-koodi skaneerimiseks."
+          "cameraPermission": "SiteClock kasutab kaamerat ainult töömaa IN- ja OUT-QR-koodide skaneerimiseks.",
+          "recordAudioAndroid": false
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "SiteClock kontrollib asukohta ainult registreerimise hetkel."
+          "locationWhenInUsePermission": "SiteClock kontrollib registreerimise hetkel, et asud töömaa läheduses."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.siteclock.app",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.siteclock.app",
+      "versionCode": 2,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/siteclock-icon.png"
+    },
     "extra": {
-      "apiUrl": "https://siteclock-api.onrender.com"
-    }
+      "eas": {
+        "projectId": "d8eadece-d8b0-4da6-a686-e9a39b29843f"
+      }
+    },
+    "owner": "jaakson8"
   }
 }
