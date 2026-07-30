@@ -11,6 +11,7 @@
         "EXPO_PUBLIC_API_URL": "https://siteclock-web.onrender.com/api"
       },
       "android": {
+        "image": "latest",
         "buildType": "apk"
       },
       "ios": {
