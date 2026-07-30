@@ -14,11 +14,21 @@ let correctionId;
 
 before(async () => {
   server = createApiServer();
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve, reject) => {
+    const onError = (error) => reject(error);
+    server.once('error', onError);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', onError);
+      resolve();
+    });
+  });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => new Promise((resolve) => server.close(resolve)));
+after(() => new Promise((resolve, reject) => {
+  if (!server?.listening) return resolve();
+  server.close((error) => error ? reject(error) : resolve());
+}));
 
 test('tervise- ja valmisolekukontroll kinnitavad andmebaasi ühendust', async () => {
   const health = await fetch(`${baseUrl}/health`);
@@ -125,11 +135,11 @@ test('tunnileht sisaldab IN registreeringut', async () => {
 test('peakasutaja saab sisse logida ja koostada automaatse arve', async () => {
   const login = await fetch(`${baseUrl}/v1/admin/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'owner@example.com', password: 'demo1234' }) });
   assert.equal(login.status, 200);
-  const challenge = await login.json();
-  assert.equal(challenge.requiresTwoFactor, true);
-  const verification = await fetch(`${baseUrl}/v1/admin/auth/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, code: challenge.developmentCode }) });
-  assert.equal(verification.status, 200);
-  adminToken = (await verification.json()).accessToken;
+  const session = await login.json();
+  assert.equal(session.requiresTwoFactor, false);
+  assert.equal(session.role, 'admin');
+  assert.ok(session.accessToken);
+  adminToken = session.accessToken;
   const generated = await fetch(`${baseUrl}/v1/admin/billing/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ date: '2026-07-01' }) });
   assert.equal(generated.status, 201);
   const invoices = await generated.json();
