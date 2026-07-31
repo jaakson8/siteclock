@@ -1,6 +1,7 @@
 module.exports = function (api) {
   api.cache(true);
+
   return {
-    presets: ["babel-preset-expo"],
+    presets: [require("expo/node_modules/babel-preset-expo")],
   };
 };
