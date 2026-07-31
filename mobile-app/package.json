@@ -1,25 +1,27 @@
 {
-  "name": "siteclock-mobile",
+  "name": "mobile-app",
   "version": "1.0.0",
-  "main": "node_modules/expo/AppEntry.js",
+  "main": "index.ts",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
+    "expo": "~57.0.7",
+    "expo-camera": "~57.0.3",
+    "expo-location": "~57.0.5",
+    "expo-secure-store": "^57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios"
-  },
-  "dependencies": {
-    "expo": "~52.0.0",
-    "expo-camera": "~16.0.0",
-    "expo-location": "~18.0.0",
-    "expo-secure-store": "~14.0.0",
-    "expo-status-bar": "~2.0.0",
-    "react": "18.3.1",
-    "react-native": "0.76.5"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.25.0",
-    "typescript": "^5.3.0",
-    "@types/react": "~18.3.0"
+    "ios": "expo start --ios",
+    "web": "expo start --web"
   },
   "private": true
 }
