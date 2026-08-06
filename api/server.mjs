@@ -583,7 +583,8 @@ async function qrSheetPdf(response, site, entrance, language = "et") {
   );
 }
 
-function presenceListPdf(response, site, people) {
+function presenceListPdf(response, site, people, language = "et") {
+  const selectedLanguage = ["et", "fi", "en"].includes(language) ? language : "et";
   const child = spawn(process.env.PYTHON_BIN ?? "python3", [
     join(moduleDirectory, "generate_presence_list.py"),
   ]);
@@ -609,7 +610,10 @@ function presenceListPdf(response, site, people) {
   child.stdin.end(JSON.stringify({
     siteName: site.name,
     address: site.address,
-    generatedAt: new Date().toLocaleString("et-EE"),
+    generatedAt: new Date().toLocaleString(
+      { et: "et-EE", fi: "fi-FI", en: "en-GB" }[selectedLanguage],
+    ),
+    language: selectedLanguage,
     people,
   }));
 }
@@ -1533,7 +1537,7 @@ export function createApiServer() {
         const people = currentPresence(new Date()).filter((item) => item.siteId === site.id);
         audit(user, "PRESENCE_LIST_EXPORTED", "SITE", site.id, { peopleCount: people.length });
         stateStore.save(persistentState);
-        return presenceListPdf(response, site, people);
+        return presenceListPdf(response, site, people, url.searchParams.get("lang") ?? "et");
       }
 
       const qrPdfMatch = url.pathname.match(
