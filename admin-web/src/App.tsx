@@ -784,7 +784,7 @@ function SiteClockApp() {
   async function openPresenceList(site: Site) {
     setError("");
     try {
-      const response = await fetch(`${apiUrl}/v1/admin/sites/${site.id}/presence-list.pdf`, {
+      const response = await fetch(`${apiUrl}/v1/admin/sites/${site.id}/presence-list.pdf?lang=${language}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error((await response.json()).message ?? "Nimekirja ei saadud luua");
