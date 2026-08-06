@@ -32,7 +32,7 @@ Peakasutaja testkonto:
 
 Meistri testkonto:
 
-- e-post: `jaak.viik@gmail.com`
+- e-post: `jaak@ingoods.fi`
 - parool: `demo1234`
 
 Meister logib vaikimisi sisse e-posti ja parooliga. E-posti kinnituskoodi saab

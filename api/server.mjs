@@ -86,7 +86,7 @@ const persistentState = stateStore.load({
     {
       id: "manager-1",
       name: "Jaak Viik",
-      email: process.env.MANAGER_EMAIL ?? "jaak.viik@gmail.com",
+      email: process.env.MANAGER_EMAIL ?? "jaak@ingoods.fi",
       title: "Meister",
       role: "manager",
       clientId: "client-1",
@@ -122,8 +122,11 @@ const {
 // Replace the original placeholder account in existing databases without
 // changing its password or permissions.
 const defaultManager = managers.find((item) => item.id === "manager-1");
-if (defaultManager?.email === "meister@example.com") {
-  defaultManager.email = process.env.MANAGER_EMAIL ?? "jaak.viik@gmail.com";
+if (
+  defaultManager &&
+  ["meister@example.com", "jaak.viik@gmail.com"].includes(defaultManager.email)
+) {
+  defaultManager.email = process.env.MANAGER_EMAIL ?? "jaak@ingoods.fi";
   if (defaultManager.name === "Demo Meister") defaultManager.name = "Jaak Viik";
   stateStore.save(persistentState);
 }

@@ -258,7 +258,7 @@ test('peakasutaja saab töötaja peatada ja PIN-i lähtestada', async () => {
 });
 
 test('meister logib sisse ja näeb ainult oma kliendi tööandmeid', async () => {
-  const login = await fetch(`${baseUrl}/v1/admin/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'jaak.viik@gmail.com', password: 'demo1234' }) });
+  const login = await fetch(`${baseUrl}/v1/admin/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'jaak@ingoods.fi', password: 'demo1234' }) });
   const session = await login.json();
   assert.equal(session.role, 'manager');
   assert.equal(session.clientId, 'client-1');
