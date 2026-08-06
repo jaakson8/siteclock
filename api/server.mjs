@@ -85,8 +85,8 @@ const persistentState = stateStore.load({
   managers: [
     {
       id: "manager-1",
-      name: "Demo Meister",
-      email: "meister@example.com",
+      name: "Jaak Viik",
+      email: process.env.MANAGER_EMAIL ?? "jaak.viik@gmail.com",
       title: "Meister",
       role: "manager",
       clientId: "client-1",
@@ -118,6 +118,15 @@ const {
   managers,
   notifications,
 } = persistentState;
+
+// Replace the original placeholder account in existing databases without
+// changing its password or permissions.
+const defaultManager = managers.find((item) => item.id === "manager-1");
+if (defaultManager?.email === "meister@example.com") {
+  defaultManager.email = process.env.MANAGER_EMAIL ?? "jaak.viik@gmail.com";
+  if (defaultManager.name === "Demo Meister") defaultManager.name = "Jaak Viik";
+  stateStore.save(persistentState);
+}
 export const processPendingEmails = createEmailProcessor({
   outbox: emailOutbox,
   invoices,
@@ -1043,16 +1052,26 @@ export function createApiServer() {
           });
         }
         clearAuthFailures(rateLimitKey);
-        if (loginUser.role === "admin") {
+        if (
+          loginUser.role === "admin" ||
+          process.env.STAFF_TWO_FACTOR_ENABLED !== "true"
+        ) {
           const accessToken = createSession(loginUser);
-          audit(loginUser, "ADMIN_LOGIN_SUCCEEDED", "SESSION", accessToken.slice(0, 12));
+          audit(
+            loginUser,
+            loginUser.role === "admin"
+              ? "ADMIN_LOGIN_SUCCEEDED"
+              : "MANAGER_LOGIN_SUCCEEDED",
+            "SESSION",
+            accessToken.slice(0, 12),
+          );
           return json(response, 200, {
             id: loginUser.id,
             name: loginUser.name,
             email: loginUser.email,
             role: loginUser.role,
-            clientId: null,
-            mustChangePassword: false,
+            clientId: loginUser.clientId ?? null,
+            mustChangePassword: Boolean(loginUser.mustChangePassword),
             requiresTwoFactor: false,
             accessToken,
             expiresInSeconds: 28800,

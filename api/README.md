@@ -30,6 +30,15 @@ Peakasutaja testkonto:
 - e-post: `owner@example.com`
 - parool: `demo1234`
 
+Meistri testkonto:
+
+- e-post: `jaak.viik@gmail.com`
+- parool: `demo1234`
+
+Meister logib vaikimisi sisse e-posti ja parooliga. E-posti kinnituskoodi saab
+hiljem uuesti sisse lülitada keskkonnamuutujaga `STAFF_TWO_FACTOR_ENABLED=true`,
+kui päris e-posti saatmine on seadistatud.
+
 Arveldustesti otspunktid:
 
 - `POST /v1/admin/billing/generate`

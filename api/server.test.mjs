@@ -258,12 +258,11 @@ test('peakasutaja saab töötaja peatada ja PIN-i lähtestada', async () => {
 });
 
 test('meister logib sisse ja näeb ainult oma kliendi tööandmeid', async () => {
-  const login = await fetch(`${baseUrl}/v1/admin/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'meister@example.com', password: 'demo1234' }) });
-  const challenge = await login.json();
-  const verification = await fetch(`${baseUrl}/v1/admin/auth/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, code: challenge.developmentCode }) });
-  const session = await verification.json();
+  const login = await fetch(`${baseUrl}/v1/admin/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'jaak.viik@gmail.com', password: 'demo1234' }) });
+  const session = await login.json();
   assert.equal(session.role, 'manager');
   assert.equal(session.clientId, 'client-1');
+  assert.equal(session.requiresTwoFactor, false);
   managerToken = session.accessToken;
   const dashboard = await fetch(`${baseUrl}/v1/manager/dashboard`, { headers: { Authorization: `Bearer ${managerToken}` } });
   assert.equal(dashboard.status, 200);
@@ -312,9 +311,7 @@ test('peakasutaja haldab meistrite ja projektijuhtide kontosid', async () => {
   assert.ok(temporaryPassword.length >= 12);
   await fetch(`${baseUrl}/v1/admin/managers/${manager.id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ active: true }) });
   const temporaryLogin = await fetch(`${baseUrl}/v1/admin/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'mari@example.com', password: temporaryPassword }) });
-  const temporaryChallenge = await temporaryLogin.json();
-  const temporaryVerification = await fetch(`${baseUrl}/v1/admin/auth/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: temporaryChallenge.challengeId, code: temporaryChallenge.developmentCode }) });
-  const temporarySession = await temporaryVerification.json();
+  const temporarySession = await temporaryLogin.json();
   assert.equal(temporarySession.mustChangePassword, true);
   const blockedDashboard = await fetch(`${baseUrl}/v1/manager/dashboard`, { headers: { Authorization: `Bearer ${temporarySession.accessToken}` } });
   assert.equal((await blockedDashboard.json()).code, 'PASSWORD_CHANGE_REQUIRED');
