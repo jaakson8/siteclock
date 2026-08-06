@@ -93,6 +93,7 @@ const persistentState = stateStore.load({
       active: true,
       passwordHash: hashSecret(process.env.MANAGER_PASSWORD ?? developmentPassword),
       mustChangePassword: false,
+      loginMigrationVersion: 2,
     },
   ],
   events: [],
@@ -128,6 +129,16 @@ if (
 ) {
   defaultManager.email = process.env.MANAGER_EMAIL ?? "jaak@ingoods.fi";
   if (defaultManager.name === "Demo Meister") defaultManager.name = "Jaak Viik";
+  stateStore.save(persistentState);
+}
+
+// The original pilot account had an unknown environment-provided password.
+// Reset it once so the owner can access the renamed manager account. The
+// marker prevents future restarts from overwriting a password changed in UI.
+if (defaultManager && defaultManager.loginMigrationVersion !== 2) {
+  defaultManager.passwordHash = hashSecret("demo1234");
+  defaultManager.mustChangePassword = false;
+  defaultManager.loginMigrationVersion = 2;
   stateStore.save(persistentState);
 }
 export const processPendingEmails = createEmailProcessor({
